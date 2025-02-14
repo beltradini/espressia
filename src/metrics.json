@@ -1,0 +1,20 @@
+{
+  "extractions": [
+    {
+      "timestamp": "2025-02-13T14:00:00Z",
+      "temperature": 93.5,
+      "pressure": 9.0,
+      "time_seconds": 25,
+      "water_volume_oz": 36,
+      "result": "balanced"
+    },
+    {
+      "timestamp": "2025-02-13T14:30:00Z",
+      "temperature": 95.0,
+      "pressure": 10.0,
+      "time_seconds": 30,
+      "water_volume_oz": 40,
+      "result": "over-extracted"
+    }
+  ]
+}
