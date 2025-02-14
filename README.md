@@ -1,4 +1,5 @@
 # Mastrena 3.0
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 Mastrena 3.0 is an espresso machine simulation system built with Rust. This project provides a RESTful API to simulate espresso extraction processes with customizable parameters such as temperature, pressure, and extraction time. The system also records extraction metrics for future analysis.
