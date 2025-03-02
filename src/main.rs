@@ -7,7 +7,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_state = api::AppState::load_metrics().await;
 
     // Print starting message
-    println!("Starting Mastrena 3.0 Simulation Server...");
+    println!("Starting Espressia Simulation Server...");
 
     // Setup and run server
     api::setup_server(app_state).await?;
