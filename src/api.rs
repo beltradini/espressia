@@ -10,11 +10,10 @@ use std::{net::SocketAddr, sync::Arc};
 use serde_json::from_str;
 use tokio::{fs, net::TcpListener, sync::Mutex as AsyncMutex};
 use tracing::{info, error, debug};
-use tracing_subscriber;
 use crate::simulation::{ExtractionMetrics, simulate_extraction};
 
 #[derive(Debug, Serialize)]
-struct ApiError {
+pub struct ApiError {
     message: String,
     status: u16,
 }
@@ -149,18 +148,5 @@ pub async fn setup_server(app_state: AppState) -> std::io::Result<()> {
     info!("Espressia running on {}", addr);
     let listener = TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
-    Ok(())
-}
-
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
-
-    info!("Starting Espressia v1.0.0");
-    let app_state = AppState::load_metrics().await;
-    setup_server(app_state).await?;
     Ok(())
 }
