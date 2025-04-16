@@ -7,9 +7,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
-use serde_json::from_str;
-use tokio::{fs, net::TcpListener, sync::Mutex as AsyncMutex};
+use tokio::net::TcpListener;
 use tracing::{info, error, debug};
+use chrono::Utc;
+use sled::Db;
 use crate::simulation::{ExtractionMetrics, simulate_extraction};
 
 #[derive(Debug, Serialize)]
@@ -27,20 +28,19 @@ impl IntoResponse for ApiError {
 
 #[derive(Clone)]
 pub struct AppState {
-    metrics: MetricsStore,
+    db: Arc<Db>,
 }
 
-type Result<T> = std::result::Result<T, ApiError>;
-type MetricsStore = Arc<AsyncMutex<Vec<ExtractionMetrics>>>;
+pub type Result<T> = std::result::Result<T, ApiError>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct ExtractionParams {
+pub struct ExtractionParams {
     #[serde(default = "default_temperature")]
-    temperature: f64,
+    pub temperature: f64,
     #[serde(default = "default_pressure")]
-    pressure: f64,
+    pub pressure: f64,
     #[serde(default = "default_time_seconds")]
-    time_seconds: u64,
+    pub time_seconds: u64,
 }
 
 fn default_temperature() -> f64 { 93.0 }
@@ -48,7 +48,7 @@ fn default_pressure() -> f64 { 9.0 }
 fn default_time_seconds() -> u64 { 25 }
 
 impl ExtractionParams {
-    fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         if !(90.0..=96.0).contains(&self.temperature) {
             return Err(ApiError {
                 message: "Temperature must be between 90.0 and 96.0".to_string(),
@@ -76,6 +76,7 @@ pub async fn start_extraction(
     Query(params): Query<ExtractionParams>,
 ) -> Result<Json<ExtractionMetrics>> {
     debug!("Received extraction request: {:?}", params);
+
     params.validate()?;
 
     let metrics = simulate_extraction(
@@ -87,15 +88,23 @@ pub async fn start_extraction(
     info!("Simulated extraction with temp={}, pressure={}, time={}",
         params.temperature, params.pressure, params.time_seconds);
 
-    let mut metrics_store = state.metrics.lock().await;
-    metrics_store.push(metrics.clone());
-    save_metrics_to_json(&metrics_store).await.map_err(|e| {
-        error!("Failed to save metrics: {}", e);
+    let metrics_bytes = serde_json::to_vec(&metrics).map_err(|e| {
+        error!("Failed to serialize metrics: {}", e);
         ApiError {
-            message: format!("Failed to save metrics: {}", e),
+            message: format!("Failed to serialize metrics: {}", e),
             status: 500,
         }
     })?;
+
+    let key = format!("metric_{}", Utc::now().timestamp_millis());
+    state.db.insert(key.as_bytes(), metrics_bytes).map_err(|e| {
+        error!("Failed to store metrics in sled: {}", e);
+        ApiError {
+            message: format!("Failed to store metrics: {}", e),
+            status: 500,
+        }
+    })?;
+    debug!("Stored metrics with key: {}", key);
 
     Ok(Json(metrics))
 }
@@ -103,38 +112,47 @@ pub async fn start_extraction(
 pub async fn get_metrics(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ExtractionMetrics>>> {
-    let metrics_store = state.metrics.lock().await;
-    if metrics_store.is_empty() {
-        info!("No metrics available to return");
+    let mut metrics = Vec::new();
+    for entry in state.db.iter() {
+        let (_key, value) = entry.map_err(|e| {
+            error!("Failed to read from sled: {}", e);
+            ApiError {
+                message: format!("Failed to read metrics: {}", e),
+                status: 500,
+            }
+        })?;
+        let metric: ExtractionMetrics = serde_json::from_slice(&value).map_err(|e| {
+            error!("Failed to deserialize metric: {}", e);
+            ApiError {
+                message: format!("Failed to deserialize metric: {}", e),
+                status: 500,
+            }
+        })?;
+        metrics.push(metric);
+    }
+
+    if metrics.is_empty() {
+        info!("No metrics available in sled");
         return Err(ApiError {
             message: "No metrics available".to_string(),
             status: 404,
         });
     }
-    info!("Returning {} stored metrics", metrics_store.len());
-    Ok(Json(metrics_store.to_vec()))
-}
 
-async fn save_metrics_to_json(metrics: &[ExtractionMetrics]) -> std::io::Result<()> {
-    const METRICS_FILE: &str = "metrics.json";
-    let json = serde_json::to_string_pretty(metrics)?;
-    fs::write(METRICS_FILE, json).await?;
-    debug!("Metrics saved to {}", METRICS_FILE);
-    Ok(())
+    info!("Returning {} stored metrics", metrics.len());
+    Ok(Json(metrics))
 }
 
 impl AppState {
-    pub async fn load_metrics() -> Self {
-        let metrics = match fs::read_to_string("metrics.json").await {
-            Ok(content) => from_str::<Vec<ExtractionMetrics>>(&content).unwrap_or_default(),
-            Err(e) => {
-                info!("No existing metrics.json found, starting fresh: {}", e);
-                Vec::new()
-            }
-        };
-        Self {
-            metrics: Arc::new(AsyncMutex::new(metrics)),
-        }
+    pub fn new() -> Self {
+        let db_config = sled::Config::new()
+            .path("espressia_metrics_db")
+            .use_compression(true)
+            .mode(sled::Mode::HighThroughput);
+
+        let db = db_config.open().expect("Failed to open sled database");
+        info!("Initialized sled database at espressia_metrics_db");
+        Self { db: Arc::new(db) }
     }
 }
 
