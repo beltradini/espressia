@@ -1,17 +1,27 @@
 use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Router,
+    extract::State as AxumState,
+    Json,
 };
-use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, sync::Arc};
-use tokio::net::TcpListener;
+use serde::{Serialize, Deserialize};
 use tracing::{info, error, debug};
 use chrono::Utc;
 use sled::Db;
+use crate::analytics::trends::{ExtractionTrends, TrendPeriod};
+use crate::analytics::alerts::Alert;
+use crate::analytics::repository::AnalyticsRepository;
 use crate::simulation::{ExtractionMetrics, simulate_extraction};
+use axum::{
+    extract::{Query},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    //routing::{get, post},
+    //Json,
+    //Router,
+};
+use std::{net::SocketAddr, sync::Arc};
+use tokio::net::TcpListener;
 
 #[derive(Debug, Serialize)]
 pub struct ApiError {
@@ -72,7 +82,7 @@ impl ExtractionParams {
 }
 
 pub async fn start_extraction(
-    State(state): State<AppState>,
+    AxumState(state): AxumState<AppState>,
     Query(params): Query<ExtractionParams>,
 ) -> Result<Json<ExtractionMetrics>> {
     debug!("Received extraction request: {:?}", params);
@@ -110,7 +120,7 @@ pub async fn start_extraction(
 }
 
 pub async fn get_metrics(
-    State(state): State<AppState>,
+    AxumState(state): AxumState<AppState>,
 ) -> Result<Json<Vec<ExtractionMetrics>>> {
     let mut metrics = Vec::new();
     for entry in state.db.iter() {
@@ -141,6 +151,39 @@ pub async fn get_metrics(
 
     info!("Returning {} stored metrics", metrics.len());
     Ok(Json(metrics))
+}
+
+// Trends endpoint
+pub async fn get_trends(
+    AxumState(state): AxumState<AppState>,
+    Query(_period): Query<TrendPeriod>
+) -> Result<Json<Vec<ExtractionTrends>>> {
+    let repository = AnalyticsRepository::new(state.db.clone());
+    let trends = repository.get_trends()
+        .map_err(|e| {
+        error!("Error fetching trends: {:?}", e);
+        ApiError {
+            message:"Error fetching trends".to_string(),
+            status: 500,
+        }
+    })?;
+    Ok(Json(trends))
+}
+
+// Alerts endpoint
+pub async fn get_alerts(
+    AxumState(state): AxumState<AppState>
+) -> Result<Json<Vec<Alert>>> {
+    let repository = AnalyticsRepository::new(state.db.clone());
+    let alerts = repository.get_alerts()
+        .map_err(|e|{
+        error!("Error fetching alerts: {:?}", e);
+        ApiError {
+            message: "Error fetching alerts".to_string(),
+            status: 500,
+        }
+    })?;
+    Ok(Json(alerts))
 }
 
 impl AppState {

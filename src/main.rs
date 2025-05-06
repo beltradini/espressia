@@ -1,5 +1,6 @@
 mod simulation;
 mod api;
+mod analytics;
 
 use tracing::{info, Level};
 

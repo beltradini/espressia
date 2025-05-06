@@ -18,6 +18,8 @@ pub struct ExtractionMetrics {
     pub time_seconds: u64,
     pub water_volume_oz: f64,
     pub result: String,
+    pub extraction_time: f64,
+    pub perfect_extraction_rate: f64,
 }
 
 impl ExtractionMetrics {
@@ -35,6 +37,14 @@ impl ExtractionMetrics {
         );
 
         is_perfect
+    }
+    
+    pub(crate) fn is_good(&self) -> bool {
+        self.is_perfect() || (
+            (PERFECT_TEMP_MIN..=PERFECT_TEMP_MAX).contains(&self.temperature)
+                && (PERFECT_PRESS_MIN..=PERFECT_PRESS_MAX).contains(&self.pressure)
+                && (PERFECT_TIME_MIN..=PERFECT_TIME_MAX).contains(&self.time_seconds)
+            )
     }
 }
 
@@ -65,6 +75,8 @@ pub fn simulate_extraction(
         time_seconds: time,
         water_volume_oz: 8.0,
         result: String::new(),
+        extraction_time: 0.0,
+        perfect_extraction_rate: 0.0,
     };
 
     let is_perfect = metrics.is_perfect();
@@ -93,6 +105,8 @@ mod tests {
             time_seconds: 25,
             water_volume_oz: 8.0,
             result: String::new(),
+            extraction_time: 0.0,
+            perfect_extraction_rate: 1.0,       
         };
         assert!(perfect_metrics.is_perfect());
     }
