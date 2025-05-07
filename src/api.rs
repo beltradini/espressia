@@ -1,27 +1,25 @@
-use axum::{
-    routing::{get, post},
-    Router,
-    extract::State as AxumState,
-    Json,
-};
-use serde::{Serialize, Deserialize};
-use tracing::{info, error, debug};
-use chrono::Utc;
-use sled::Db;
-use crate::analytics::trends::{ExtractionTrends, TrendPeriod};
 use crate::analytics::alerts::Alert;
 use crate::analytics::repository::AnalyticsRepository;
-use crate::simulation::{ExtractionMetrics, simulate_extraction};
+use crate::simulation::{CoffeeType, ExtractionMetrics, GrindSize, RoastLevel};
+use crate::{
+    analytics::trends::{ExtractionTrends, TrendPeriod},
+    simulation::simulate_extraction,
+};
 use axum::{
-    extract::{Query},
+    extract::{Query, State as AxumState},
+    routing::{get, post},
+    Json, Router,
+};
+use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
-    //routing::{get, post},
-    //Json,
-    //Router,
 };
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sled::Db;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use tracing::{debug, error, info};
 
 #[derive(Debug, Serialize)]
 pub struct ApiError {
@@ -51,11 +49,23 @@ pub struct ExtractionParams {
     pub pressure: f64,
     #[serde(default = "default_time_seconds")]
     pub time_seconds: u64,
+    #[serde(default)]
+    pub coffee_type: Option<CoffeeType>,
+    #[serde(default)]
+    pub roast_level: Option<RoastLevel>,
+    #[serde(default)]
+    pub grind_size: Option<GrindSize>,
 }
 
-fn default_temperature() -> f64 { 93.0 }
-fn default_pressure() -> f64 { 9.0 }
-fn default_time_seconds() -> u64 { 25 }
+fn default_temperature() -> f64 {
+    93.0
+}
+fn default_pressure() -> f64 {
+    9.0
+}
+fn default_time_seconds() -> u64 {
+    25
+}
 
 impl ExtractionParams {
     pub fn validate(&self) -> Result<()> {
@@ -77,26 +87,35 @@ impl ExtractionParams {
                 status: 400,
             });
         }
+        // Podrías añadir validaciones para coffee_type, roast_level, grind_size si es necesario
         Ok(())
     }
 }
 
 pub async fn start_extraction(
     AxumState(state): AxumState<AppState>,
-    Query(params): Query<ExtractionParams>,
+    Query(params): Query<ExtractionParams>, // Query ahora está explícitamente importado
 ) -> Result<Json<ExtractionMetrics>> {
+    // ExtractionMetrics ahora está importado
     debug!("Received extraction request: {:?}", params);
 
     params.validate()?;
 
-    let metrics = simulate_extraction(
+    let metrics: ExtractionMetrics = simulate_extraction(
+        // Especificar el tipo de 'metrics' puede ayudar al compilador
         Some(params.temperature),
         Some(params.pressure),
         Some(params.time_seconds),
+        params.coffee_type,
+        params.roast_level,
+        params.grind_size,
     );
 
-    info!("Simulated extraction with temp={}, pressure={}, time={}",
-        params.temperature, params.pressure, params.time_seconds);
+    info!(
+        "Simulated extraction with temp={}, pressure={}, time={}, coffee_type={:?}, roast_level={:?}, grind_size={:?}", // <--- ACTUALIZADO LOG
+        params.temperature, params.pressure, params.time_seconds,
+        params.coffee_type, params.roast_level, params.grind_size
+    );
 
     let metrics_bytes = serde_json::to_vec(&metrics).map_err(|e| {
         error!("Failed to serialize metrics: {}", e);
@@ -107,13 +126,16 @@ pub async fn start_extraction(
     })?;
 
     let key = format!("metric_{}", Utc::now().timestamp_millis());
-    state.db.insert(key.as_bytes(), metrics_bytes).map_err(|e| {
-        error!("Failed to store metrics in sled: {}", e);
-        ApiError {
-            message: format!("Failed to store metrics: {}", e),
-            status: 500,
-        }
-    })?;
+    state
+        .db
+        .insert(key.as_bytes(), metrics_bytes)
+        .map_err(|e| {
+            error!("Failed to store metrics in sled: {}", e);
+            ApiError {
+                message: format!("Failed to store metrics: {}", e),
+                status: 500,
+            }
+        })?;
     debug!("Stored metrics with key: {}", key);
 
     Ok(Json(metrics))
@@ -122,7 +144,8 @@ pub async fn start_extraction(
 pub async fn get_metrics(
     AxumState(state): AxumState<AppState>,
 ) -> Result<Json<Vec<ExtractionMetrics>>> {
-    let mut metrics = Vec::new();
+    // ExtractionMetrics ahora está importado
+    let mut metrics_vec = Vec::new(); // Renombrado para evitar shadowing con el 'metrics' del bucle si lo hubiera
     for entry in state.db.iter() {
         let (_key, value) = entry.map_err(|e| {
             error!("Failed to read from sled: {}", e);
@@ -132,16 +155,17 @@ pub async fn get_metrics(
             }
         })?;
         let metric: ExtractionMetrics = serde_json::from_slice(&value).map_err(|e| {
+            // ExtractionMetrics ahora está importado
             error!("Failed to deserialize metric: {}", e);
             ApiError {
                 message: format!("Failed to deserialize metric: {}", e),
                 status: 500,
             }
         })?;
-        metrics.push(metric);
+        metrics_vec.push(metric);
     }
 
-    if metrics.is_empty() {
+    if metrics_vec.is_empty() {
         info!("No metrics available in sled");
         return Err(ApiError {
             message: "No metrics available".to_string(),
@@ -149,21 +173,20 @@ pub async fn get_metrics(
         });
     }
 
-    info!("Returning {} stored metrics", metrics.len());
-    Ok(Json(metrics))
+    info!("Returning {} stored metrics", metrics_vec.len());
+    Ok(Json(metrics_vec))
 }
 
 // Trends endpoint
 pub async fn get_trends(
     AxumState(state): AxumState<AppState>,
-    Query(_period): Query<TrendPeriod>
+    Query(_period): Query<TrendPeriod>, // Query ahora está explícitamente importado
 ) -> Result<Json<Vec<ExtractionTrends>>> {
     let repository = AnalyticsRepository::new(state.db.clone());
-    let trends = repository.get_trends()
-        .map_err(|e| {
+    let trends = repository.get_trends().map_err(|e| {
         error!("Error fetching trends: {:?}", e);
         ApiError {
-            message:"Error fetching trends".to_string(),
+            message: "Error fetching trends".to_string(),
             status: 500,
         }
     })?;
@@ -171,12 +194,9 @@ pub async fn get_trends(
 }
 
 // Alerts endpoint
-pub async fn get_alerts(
-    AxumState(state): AxumState<AppState>
-) -> Result<Json<Vec<Alert>>> {
+pub async fn get_alerts(AxumState(state): AxumState<AppState>) -> Result<Json<Vec<Alert>>> {
     let repository = AnalyticsRepository::new(state.db.clone());
-    let alerts = repository.get_alerts()
-        .map_err(|e|{
+    let alerts = repository.get_alerts().map_err(|e| {
         error!("Error fetching alerts: {:?}", e);
         ApiError {
             message: "Error fetching alerts".to_string(),
@@ -203,6 +223,9 @@ pub async fn setup_server(app_state: AppState) -> std::io::Result<()> {
     let app = Router::new()
         .route("/start", post(start_extraction))
         .route("/metrics", get(get_metrics))
+        // Deberías añadir tus rutas de trends y alerts aquí también si quieres exponerlas
+        .route("/trends", get(get_trends)) // <--- AÑADIDO (Ejemplo)
+        .route("/alerts", get(get_alerts)) // <--- AÑADIDO (Ejemplo)
         .with_state(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
