@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
+use crate::simulation::ExtractionMetrics;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
-use crate::simulation::ExtractionMetrics;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Alert {
@@ -29,7 +29,7 @@ pub enum AlertCategory {
     SystemHealth,
 }
 
-pub struct  AlertGenerator {
+pub struct AlertGenerator {
     rules: Vec<AlertRule>,
 }
 
@@ -45,7 +45,7 @@ impl AlertGenerator {
                 Self::low_perfection_rate_rule(),
                 Self::temperature_deviation_rule(),
                 Self::pressure_instability_rule(),
-            ]
+            ],
         }
     }
 
@@ -62,7 +62,7 @@ impl AlertGenerator {
                         message: "Low perfect extraction rate detected.".to_string(),
                         metadata: Some(json!({
                             "perfect_rate": metrics.perfect_extraction_rate,
-                        }))
+                        })),
                     })
                 } else {
                     None
@@ -84,7 +84,7 @@ impl AlertGenerator {
                         message: "Temperature outside acceptable range".to_string(),
                         metadata: Some(json!({
                             "temperature": metrics.temperature,
-                        }))
+                        })),
                     })
                 } else {
                     None
@@ -106,7 +106,7 @@ impl AlertGenerator {
                         message: "Pressure outside stable range".to_string(),
                         metadata: Some(json!({
                             "pressure": metrics.pressure,
-                        }))
+                        })),
                     })
                 } else {
                     None

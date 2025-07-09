@@ -10,6 +10,9 @@ Espressia is a visionary espresso simulation system crafted in Rust, designed to
 - **Precision Validation**: Ensures every input aligns with the science of espresso perfection.
 - **Metrics Eternity**: Stores extraction data in a robust format for reflection and growth.
 - **RESTful Elegance**: Offers intuitive endpoints to initiate extractions and explore past brilliance.
+- **Database Integration**: Metrics are now stored in a high-performance database for seamless retrieval.
+- **Recipe Gallery**: Explore and share a curated collection of espresso recipes.
+- **Enhanced Logging**: Comprehensive error handling and detailed logs for debugging and insights.
 
 ## Installation
 To embark on the Espressia journey, follow these steps:
@@ -50,10 +53,10 @@ Example:
 curl -X GET "http://127.0.0.1:3000/metrics"
 ```
 ## Future Improvements
-- Forge a database to immortalize metrics with grace and speed.
-- Unveil a gallery of espresso recipes for instant mastery.
-- Enhance error whispers and log every moment of brilliance.
 - Expand the API to simulate a universe of beverages.
+- Introduce machine learning to recommend optimal brewing parameters based on user preferences.
+- Develop a mobile application for remote control and monitoring of espresso simulations.
+- Add support for multi-user accounts and collaborative recipe sharing.
 
 ## License
 Espressia is released under the MIT License.
