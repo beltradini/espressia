@@ -14,9 +14,11 @@ enum NetworkError {
 }
 
 // Config, review the implementation 
-enum SmtpConfig {
-    Connect,
-    Disconnect,
+pub struct SmtpConfig {
+    server: String,
+    port: u16,
+    username: String,
+    password: String,
 }
 
 pub struct  EmailNotifier {
